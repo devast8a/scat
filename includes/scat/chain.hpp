@@ -18,12 +18,12 @@ struct chain_t {
     uint32_t value;
 
     chain_t(){
-        value = 0;
+        value = 0xCCCCCCCC;
     }
 
     template<class T>
     inline T read(T* p){
-        this->value += *p;
+        this->value ^= (this->value + *p) << 8;
         return *p;
     }
 

@@ -1,39 +1,24 @@
-#include <scat/utils.hpp>
-#include <scat/chain.hpp>
-#include <scat/set_construction.hpp>
 #include <scat/prime_probe.hpp>
-#include <scat/timer.hpp>
-
-#include <chrono>
+#include <scat/signal.hpp>
 
 int main(){
-    using namespace scat;
-    using namespace scat::prime_probe;
-    using namespace scat::timer;
+    auto pp = scat::prime_probe::create();
 
-    chain_t chain;
-    size_t failures = 0;
-    for(size_t i = 0; i < 10; i += 1){
-        cache backend;
-        rdtscp32 timer;
-        evicter<cache, rdtscp32> measure(&backend, &timer, chain);
+    auto signal = scat::signal::find_first(
+        scat::signal::repeat({1, 0, 1, 0, 1, 1, 1, 0, 0, 0}, 3),
+        pp
+    );
 
-        auto start = std::chrono::system_clock::now();
-        auto sets = eviction_set_builder<evicter<cache, rdtscp32>>::build(measure);
-        auto end = std::chrono::system_clock::now();
-
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cerr << "Time: " << duration.count() << "ms" << std::endl;
-        std::cerr << std::endl;
-
-        // Definitely not portable, but who cares right now
-        if(sets.size() < 8000){
-            failures += 1;
-            std::cerr << "########################################" << std::endl;
-        } else {
-            std::cerr << "----------------------------------------" << std::endl;
-        }
+    if(!signal){
+        std::cout << "Could not find signal" << std::endl;
+        return 1;
     }
 
-    std::cerr << "Failures: " << failures << std::endl;
+    auto data = scat::signal::decode_binary(*signal, 256);
+    for(auto bit : data){
+        std::cout << (bit ? "1" : "0");
+    }
+    std::cout << std::endl;
+
+    return 0;
 }
