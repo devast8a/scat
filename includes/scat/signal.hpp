@@ -58,10 +58,11 @@ public:
 private:
     chain_t chain;  // TODO: Support universal chain?
     std::vector<channel_t> channels;
-    Reader reader;
     std::shared_ptr<State> state;
 
 public:
+    Reader reader;
+
     source_group(
         std::shared_ptr<State> state,
         Reader reader

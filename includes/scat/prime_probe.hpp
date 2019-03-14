@@ -183,67 +183,35 @@ protected:
 template<class State>
 struct reader_eviction_count {
 public:
-    using ticks_t = typename State::timer_t::ticks_t;
+    using backend_t = typename State::backend_t;
     using sample_t = int16_t;
+    using ticks_t = typename State::timer_t::ticks_t;
+    using timer_t = typename State::timer_t;
 
     static const sample_t MISSED_TIME_SLOT = -1;
 
 public:
-    // TODO: Support configuration
     size_t sample_count = 10000;
-    ticks_t slot_length = 3000;
+    ticks_t sample_length = 3000;
     ticks_t threshold = 130;
 
-protected:
-    // probe
-    //  Return the number of elements in the provided range that have been evicted then busy wait
-    //  until the end of the timeslot.
-    //
-    //  Returns MISSED_TIME_SLOT if probe is called and the timeslot has already been missed or if
-    //  element accessing took longer than the timeslot.
-    template<class Iterator>
-    inline sample_t probe(
-        State& state,
-        Iterator begin,
-        Iterator end,
-        ticks_t slot_start,
-        chain_t& chain
-    ){
-        sample_t count = 0;
-        auto time_start = state.timer->get_ticks(chain);
-        auto time_end = time_start;
-
-        // Check if previous timeslot overran and consumed out timeslot
-        if((time_end - slot_start) > slot_length){
-            return MISSED_TIME_SLOT;
-        }
-
-        for(auto it = begin; it != end; ++it){
-            state.backend->access_element(*it, chain);
-            time_end = state.timer->get_ticks(chain);
-
-            // Check if element was evicted
-            if((time_end - time_start) >= threshold){
-                count += 1;
-            }
-
-            time_start = time_end;
-        }
-
-        // We might have missed our timeslot if our code was interrupted
-        if((time_end - slot_start) > slot_length){
-            return MISSED_TIME_SLOT;
-        }
-
-        // Spin until the end of our time slot
-        while((time_end - slot_start) < slot_length){
-            time_end = state.timer->get_ticks(chain);
-        }
-
-        return count;
+public:
+    void set_sample_length(ticks_t sample_length){
+        this->sample_length = sample_length;
     }
 
-public:
+    void set_sample_length(std::chrono::nanoseconds sample_length){
+        set_sample_length(timer::realtime_to_ticks<timer_t>(sample_length));
+    }
+
+    void set_recording_length(ticks_t recording_length){
+        this->sample_count = (recording_length / this->sample_length);
+    }
+
+    void set_recording_length(std::chrono::nanoseconds recording_length){
+        set_recording_length(timer::realtime_to_ticks<timer_t>(recording_length));
+    }
+
     // read_channel
     //  Return a vector of samples obtained by repeatedly calling probe on a given channel.
     //
@@ -274,10 +242,10 @@ public:
         auto slot_start = state.timer->get_ticks(chain);
         for(size_t i = 0; i < iterations; i += 1){
             samples.push_back(probe(state,  set.begin(),  set.end(), slot_start, chain));
-            slot_start += slot_length;
+            slot_start += sample_length;
 
             samples.push_back(probe(state, set.rbegin(), set.rend(), slot_start, chain));
-            slot_start += slot_length;
+            slot_start += sample_length;
         }
         if(odd_sample_count){
             samples.push_back(probe(state,  set.begin(),  set.end(), slot_start, chain));
@@ -302,11 +270,61 @@ public:
         }
         return samples;
     }
+
+protected:
+    // probe
+    //  Return the number of elements in the provided range that have been evicted then busy wait
+    //  until the end of the timeslot.
+    //
+    //  Returns MISSED_TIME_SLOT if probe is called and the timeslot has already been missed or if
+    //  element accessing took longer than the timeslot.
+    template<class Iterator>
+    inline sample_t probe(
+        State& state,
+        Iterator begin,
+        Iterator end,
+        ticks_t slot_start,
+        chain_t& chain
+    ){
+        sample_t count = 0;
+        auto time_start = state.timer->get_ticks(chain);
+        auto time_end = time_start;
+
+        // Check if previous timeslot overran and consumed out timeslot
+        if((time_end - slot_start) > sample_length){
+            return MISSED_TIME_SLOT;
+        }
+
+        for(auto it = begin; it != end; ++it){
+            state.backend->access_element(*it, chain);
+            time_end = state.timer->get_ticks(chain);
+
+            // Check if element was evicted
+            if((time_end - time_start) >= threshold){
+                count += 1;
+            }
+
+            time_start = time_end;
+        }
+
+        // We might have missed our timeslot if our code was interrupted
+        if((time_end - slot_start) > sample_length){
+            return MISSED_TIME_SLOT;
+        }
+
+        // Spin until the end of our time slot
+        while((time_end - slot_start) < sample_length){
+            time_end = state.timer->get_ticks(chain);
+        }
+
+        return count;
+    }
 };
 
 // TODO: Clean this all up
 template<class Backend, class Timer, class Evicter>
 struct state {
+    using backend_t = Backend;
     using timer_t = Timer;
 
     std::unique_ptr<Backend> backend;
