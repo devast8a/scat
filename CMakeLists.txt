@@ -10,9 +10,15 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Dependencies
+add_subdirectory(vendor/catch2)
+
 
 # main
 add_executable(main src/main.cpp)
 target_include_directories(main PRIVATE includes)
+
+add_executable(tests tests/test-main.cpp tests/constant.cpp)
+target_link_libraries(tests catch2)
+target_include_directories(tests PRIVATE includes)
 
 add_executable(L3-rattle src/L3-rattle.cpp)
